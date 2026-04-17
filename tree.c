@@ -130,8 +130,65 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 //
 // Returns 0 on success, -1 on error.
 int tree_from_index(ObjectID *id_out) {
-    // TODO: Implement recursive tree building
-    // (See Lab Appendix for logical steps)
-    (void)id_out;
-    return -1;
+    Tree tree;
+    tree.count = 0;
+
+    for (int i = 0; i < count; ) {
+        const char *current_path = entries[i].path + depth;
+        const char *slash = strchr(current_path, '/');
+
+        if (slash) {
+            size_t dir_name_len = slash - current_path;
+            char dir_name[256];
+            strncpy(dir_name, current_path, dir_name_len);
+            dir_name[dir_name_len] = '\0';
+
+            int sub_count = 0;
+            while (i + sub_count < count) {
+                const char *p = entries[i + sub_count].path + depth;
+                if (strncmp(p, dir_name, dir_name_len) == 0 && p[dir_name_len] == '/') {
+                    sub_count++;
+                } else {
+                    break;
+                }
+            }
+
+            ObjectID sub_tree_id;
+            if (write_tree_recursive(entries + i, sub_count, depth + dir_name_len + 1, &sub_tree_id) != 0) {
+                return -1;
+            }
+
+            TreeEntry *te = &tree.entries[tree.count++];
+            te->mode = MODE_DIR;
+            strcpy(te->name, dir_name);
+            memcpy(te->hash.hash, sub_tree_id.hash, HASH_SIZE);
+
+            i += sub_count;
+        } else {
+            TreeEntry *te = &tree.entries[tree.count++];
+            te->mode = entries[i].mode;
+            strcpy(te->name, current_path);
+            memcpy(te->hash.hash, entries[i].hash.hash, HASH_SIZE);
+            i++;
+        }
+
+        if (tree.count >= MAX_TREE_ENTRIES) return -1;
+    }
+
+    void *data;
+    size_t len;
+    if (tree_serialize(&tree, &data, &len) != 0) return -1;
+    
+    if (object_write(1, data, len, id_out) != 0) {
+        free(data);
+        return -1;
+    }
+
+    free(data);
+    
+    Index idx;
+    if (index_load(&idx) != 0) return -1;
+    if (idx.count == 0) return -1;
+    
+    return write_tree_recursive(idx.entries, idx.count, 0, id_out);
 }
