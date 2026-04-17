@@ -1,3 +1,4 @@
+
 // commit.c — Commit creation and history traversal
 //
 // Commit object format (stored as text, one field per line):
@@ -193,8 +194,10 @@ int head_update(const ObjectID *new_commit) {
 //   - head_update       : moves the branch pointer to your new commit
 //
 // Returns 0 on success, -1 on error.
+#include <errno.h>
+
 int commit_create(const char *message, ObjectID *commit_id_out) {
-      Commit c;
+    Commit c;
     memset(&c, 0, sizeof(Commit));
 
     if (tree_from_index(&c.tree) != 0) {
@@ -208,4 +211,38 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
         c.has_parent = 0; 
     }
 
+    const char *author = pes_author();
+    if (!author) {
+        fprintf(stderr, "[DEBUG] pes_author() returned NULL.\n");
+        return -1;
+    }
+    strncpy(c.author, author, sizeof(c.author) - 1);
+    c.author[sizeof(c.author) - 1] = '\0';
+    c.timestamp = (uint64_t)time(NULL);
+
+    strncpy(c.message, message, sizeof(c.message) - 1);
+    c.message[sizeof(c.message) - 1] = '\0';
+
+    void *data;
+    size_t len;
+    if (commit_serialize(&c, &data, &len) != 0) {
+        fprintf(stderr, "[DEBUG] commit_serialize failed.\n");
+        return -1;
+    }
+
+    if (object_write(OBJ_COMMIT, data, len, commit_id_out) != 0) {
+        fprintf(stderr, "[DEBUG] object_write failed for commit object.\n");
+        perror("[DEBUG] System error was");
+        free(data);
+        return -1;
+    }
+    free(data);
+
+    if (head_update(commit_id_out) != 0) {
+        fprintf(stderr, "[DEBUG] head_update failed.\n");
+        perror("[DEBUG] System error was");
+        return -1;
+    }
+
+    return 0;
 }
