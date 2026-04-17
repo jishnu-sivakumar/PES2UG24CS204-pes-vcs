@@ -176,10 +176,41 @@ char hex[65];
 //
 // Returns 0 on success, -1 on error.
 int index_save(const Index *index) {
-    // TODO: Implement atomic index saving
-    // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
+     Index *sorted_idx = malloc(sizeof(Index));
+    if (!sorted_idx) return -1;
+
+    *sorted_idx = *index;
+    qsort(sorted_idx->entries, sorted_idx->count, sizeof(IndexEntry), compare_index_entries);
+
+    char temp_file[256];
+    snprintf(temp_file, sizeof(temp_file), ".pes/index.tmp");
+
+    FILE *f = fopen(temp_file, "w");
+    if (!f) {
+        free(sorted_idx); 
+        return -1;
+    }
+
+    for (int i = 0; i < sorted_idx->count; i++) {
+        const IndexEntry *e = &sorted_idx->entries[i];
+        char hex[65];
+        hash_to_hex(&e->hash, hex);
+
+        fprintf(f, "%o %s %lu %zu %s\n", 
+                (unsigned int)e->mode, hex, (unsigned long)e->mtime_sec, (size_t)e->size, e->path);
+    }
+
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+    free(sorted_idx); 
+
+    if (rename(temp_file, ".pes/index") < 0) {
+        unlink(temp_file);
+        return -1;
+    }
+
+    return 0;
 }
 
 // Stage a file for the next commit.
@@ -192,8 +223,6 @@ int index_save(const Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_add(Index *index, const char *path) {
-    // TODO: Implement file staging
-    // (See Lab Appendix for logical steps)
-    (void)index; (void)path;
-    return -1;
+     return -1;
+
 }
