@@ -187,6 +187,66 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
 // Returns 0 on success, -1 on error (file not found, corrupt, etc.).
 int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_t *len_out) {
     // TODO: Implement
-    (void)id; (void)type_out; (void)data_out; (void)len_out;
-    return -1;
+    char path[512];
+    object_path(id, path, sizeof(path));
+
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    fseek(f, 0, SEEK_END);
+    long full_len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    uint8_t *buffer = malloc(full_len);
+    if (!buffer) {
+        fclose(f);
+        return -1;
+    }
+
+    if (fread(buffer, 1, full_len, f) != (size_t)full_len) {
+        free(buffer);
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+
+    ObjectID actual_id;
+    compute_hash(buffer, full_len, &actual_id);
+    if (memcmp(id->hash, actual_id.hash, HASH_SIZE) != 0) {
+        free(buffer);
+        return -1;
+    }
+    char *null_ptr = memchr(buffer, '\0', full_len);
+    if (!null_ptr) {
+        free(buffer);
+        return -1;
+    }
+
+    size_t header_len = (uint8_t *)null_ptr - buffer + 1;
+    char type_str[16];
+    size_t size;
+    if (sscanf((char *)buffer, "%15s %zu", type_str, &size) != 2) {
+        free(buffer);
+        return -1;
+    }
+
+    if (strcmp(type_str, "blob") == 0) *type_out = OBJ_BLOB;
+    else if (strcmp(type_str, "tree") == 0) *type_out = OBJ_TREE;
+    else if (strcmp(type_str, "commit") == 0) *type_out = OBJ_COMMIT;
+    else {
+        free(buffer);
+        return -1;
+    }
+
+    *len_out = size;
+    *data_out = malloc(size);
+    if (!*data_out) {
+        free(buffer);
+        return -1;
+    }
+    memcpy(*data_out, buffer + header_len, size);
+
+    free(buffer);
+    return 0;
+
 }
